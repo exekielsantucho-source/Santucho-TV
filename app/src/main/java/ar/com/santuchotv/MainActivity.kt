@@ -73,3 +73,137 @@ fun SantuchoApp() {
 
     val argentina = channels.filter { it.country.equals("AR", true) }
     val visible = when (category) {
+        "Argentina" -> argentina
+        "Favoritos" -> channels.filter { favorites.contains(it.url) }
+        "Todos" -> channels
+        else -> channels
+    }.filter { query.isBlank() || it.name.contains(query, true) }
+
+    Row(Modifier.fillMaxSize().background(Black)) {
+        Column(
+            Modifier.width(220.dp).fillMaxHeight().background(Panel).padding(12.dp)
+        ) {
+            Text("SANTUCHO TV", color = Red, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            Spacer(Modifier.height(16.dp))
+            listOf("Argentina", "Todos", "Favoritos").forEach { cat ->
+                Text(
+                    cat,
+                    color = if (category == cat) Red else Color.White,
+                    fontWeight = if (category == cat) FontWeight.Bold else FontWeight.Normal,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { category = cat }
+                        .padding(vertical = 10.dp)
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            Button(
+                onClick = { refreshCounter++ },
+                colors = ButtonDefaults.buttonColors(containerColor = Red)
+            ) { Text("Actualizar lista") }
+        }
+
+        Column(
+            Modifier.width(300.dp).fillMaxHeight().background(Color(0xFF101010)).padding(12.dp)
+        ) {
+            BasicTextField(
+                value = query,
+                onValueChange = { query = it },
+                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 16.sp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Panel, RoundedCornerShape(8.dp))
+                    .padding(10.dp)
+            )
+            Spacer(Modifier.height(10.dp))
+            if (loading) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Red)
+                }
+            } else if (error != null) {
+                Text(error ?: "", color = Color.White)
+            } else {
+                LazyColumn {
+                    items(visible) { channel ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { selected = channel }
+                                .focusable()
+                                .background(if (selected == channel) Panel else Color.Transparent)
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(channel.name, color = Color.White, modifier = Modifier.weight(1f))
+                            Icon(
+                                imageVector = if (favorites.contains(channel.url)) Icons.Filled.Star else Icons.Filled.StarBorder,
+                                contentDescription = null,
+                                tint = Red,
+                                modifier = Modifier.clickable {
+                                    favorites = if (favorites.contains(channel.url))
+                                        favorites - channel.url
+                                    else
+                                        favorites + channel.url
+                                    prefs.edit().putStringSet("favorites", favorites).apply()
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Box(Modifier.weight(1f).fillMaxHeight().background(Color.Black)) {
+            selected?.let { channel ->
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            player = ExoPlayer.Builder(ctx).build().also {
+                                it.setMediaItem(MediaItem.fromUri(channel.url))
+                                it.prepare()
+                                it.playWhenReady = true
+                            }
+                        }
+                    },
+                    update = { view ->
+                        val current = view.player
+                        if (current?.currentMediaItem?.localConfiguration?.uri.toString() != channel.url) {
+                            current?.release()
+                            view.player = ExoPlayer.Builder(view.context).build().also {
+                                it.setMediaItem(MediaItem.fromUri(channel.url))
+                                it.prepare()
+                                it.playWhenReady = true
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
+}
+private suspend fun loadM3u(url: String): List<TvChannel> {
+    val text = URL(url).readText()
+    val lines = text.lines()
+    val result = mutableListOf<TvChannel>()
+    var name = ""
+    var country = ""
+    var group = ""
+    for (line in lines) {
+        when {
+            line.startsWith("#EXTINF") -> {
+                name = line.substringAfterLast(",").trim()
+                country = Regex("tvg-country=\"([^\"]*)\"").find(line)?.groupValues?.get(1) ?: ""
+                group = Regex("group-title=\"([^\"]*)\"").find(line)?.groupValues?.get(1) ?: ""
+            }
+            line.isNotBlank() && !line.startsWith("#") -> {
+                result.add(TvChannel(name = name, url = line.trim(), country = country, group = group))
+            }
+        }
+    }
+    return result
+}
