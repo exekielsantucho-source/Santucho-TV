@@ -31,7 +31,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
 
-private const val PLAYLIST_URL = "https://iptv-org.github.io/iptv/index.m3u"
+private const val PLAYLIST_URL = "https://iptv-org.github.io/iptv/categories/sports.m3u"
+private val SouthAmerica = setOf("AR", "BO", "BR", "CL", "CO", "EC", "PY", "PE", "UY", "VE")
 private val Red = Color(0xFFF00000)
 private val Black = Color(0xFF080808)
 private val Panel = Color(0xFF171717)
@@ -51,7 +52,7 @@ fun SantuchoApp() {
     val prefs = remember { context.getSharedPreferences("santucho", 0) }
     var channels by remember { mutableStateOf<List<TvChannel>>(emptyList()) }
     var selected by remember { mutableStateOf<TvChannel?>(null) }
-    var category by remember { mutableStateOf("Argentina") }
+    var category by remember { mutableStateOf("Sudamérica") }
     var query by remember { mutableStateOf("") }
     var favorites by remember { mutableStateOf(prefs.getStringSet("favorites", emptySet()) ?: emptySet()) }
     var loading by remember { mutableStateOf(true) }
@@ -63,7 +64,7 @@ fun SantuchoApp() {
         try {
             channels = withContext(Dispatchers.IO) { loadM3u(PLAYLIST_URL) }
             loading = false
-            selected = channels.firstOrNull { it.country.equals("AR", true) }
+            selected = channels.firstOrNull { SouthAmerica.contains(it.country.uppercase()) }
                 ?: channels.firstOrNull()
         } catch (e: Exception) {
             loading = false
@@ -71,9 +72,9 @@ fun SantuchoApp() {
         }
     }
 
-    val argentina = channels.filter { it.country.equals("AR", true) }
+    val southAmerica = channels.filter { SouthAmerica.contains(it.country.uppercase()) }
     val visible = when (category) {
-        "Argentina" -> argentina
+        "Sudamérica" -> southAmerica
         "Favoritos" -> channels.filter { favorites.contains(it.url) }
         "Todos" -> channels
         else -> channels
@@ -85,7 +86,7 @@ fun SantuchoApp() {
         ) {
             Text("SANTUCHO TV", color = Red, fontWeight = FontWeight.Bold, fontSize = 20.sp)
             Spacer(Modifier.height(16.dp))
-            listOf("Argentina", "Todos", "Favoritos").forEach { cat ->
+            listOf("Sudamérica", "Todos", "Favoritos").forEach { cat ->
                 Text(
                     cat,
                     color = if (category == cat) Red else Color.White,
@@ -186,6 +187,7 @@ fun SantuchoApp() {
         }
     }
 }
+
 private suspend fun loadM3u(url: String): List<TvChannel> {
     val text = URL(url).readText()
     val lines = text.lines()
